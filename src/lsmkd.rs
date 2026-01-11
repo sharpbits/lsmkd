@@ -1,5 +1,6 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use regex::Regex;
+use serde::Serialize;
 use std::fs;
 use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
@@ -28,13 +29,36 @@ struct Args {
     /// Traverse all paths, including commonly ignored such as node_modules/
     #[arg(short = 'a', long = "all")]
     all: bool,
+
+    /// Maximum directory depth for traversal, unlimited by default
+    #[arg(short = 'd', long = "depth")]
+    depth: Option<usize>,
+
+    /// Output format
+    #[arg(short = 'o', long = "output", default_value = "text")]
+    output: OutputFormat,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum OutputFormat {
+    Text,
+    Json,
+    Yaml,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct Heading {
     level: usize,
     text: String,
     line_number: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct FileInfo {
+    path: String,
+    size: u64,
+    lines: usize,
+    headings: Vec<Heading>,
 }
 
 fn main() {
@@ -56,35 +80,56 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         args.files
     };
 
-    let mut first = true;
-    for path in paths {
-        // Add blank line between different top-level paths
-        if !first {
-            println!();
-        }
-        first = false;
+    let mut all_files: Vec<FileInfo> = Vec::new();
 
+    for path in &paths {
         let mut markdown_files = Vec::new();
         collect_markdown_files(
             &path,
             &mut markdown_files,
             args.non_recursive,
             args.all,
+            args.depth,
+            0,
         )?;
 
-        // Sort files to ensure consistent ordering
         markdown_files.sort();
 
-        // Extract headings for all files
-        let mut file_data = Vec::new();
         for md_file in markdown_files {
             let headings = extract_headings(&md_file, args.min_toc_depth, args.max_toc_depth)?;
             let line_count = count_lines(&md_file)?;
-            file_data.push((md_file, headings, line_count));
-        }
+            let size = fs::metadata(&md_file)?.len();
 
-        // Print the tree structure
-        print_tree(&path, &file_data);
+            all_files.push(FileInfo {
+                path: md_file.display().to_string(),
+                size,
+                lines: line_count,
+                headings,
+            });
+        }
+    }
+
+    match args.output {
+        OutputFormat::Json => println!("{}", serde_json::to_string(&all_files)?),
+        OutputFormat::Yaml => println!("{}", serde_yaml::to_string(&all_files)?),
+        OutputFormat::Text => {
+            let mut first = true;
+            for path in &paths {
+                if !first {
+                    println!();
+                }
+                first = false;
+
+                let path_str = path.display().to_string();
+                let file_data: Vec<_> = all_files
+                    .iter()
+                    .filter(|f| f.path.starts_with(&path_str))
+                    .map(|f| (PathBuf::from(&f.path), f.headings.clone(), f.lines))
+                    .collect();
+
+                print_tree(path, &file_data);
+            }
+        }
     }
 
     Ok(())
@@ -95,6 +140,8 @@ fn collect_markdown_files(
     files: &mut Vec<PathBuf>,
     non_recursive: bool,
     all: bool,
+    max_depth: Option<usize>,
+    current_depth: usize,
 ) -> io::Result<()> {
     if !path.exists() {
         return Err(io::Error::new(
@@ -124,7 +171,13 @@ fn collect_markdown_files(
             if entry_path.is_file() && is_markdown_file(&entry_path) {
                 files.push(entry_path);
             } else if entry_path.is_dir() && !non_recursive {
-                collect_markdown_files(&entry_path, files, non_recursive, all)?;
+                // Check if we've exceeded the maximum depth before recursing
+                if let Some(max) = max_depth {
+                    if current_depth >= max {
+                        continue;
+                    }
+                }
+                collect_markdown_files(&entry_path, files, non_recursive, all, max_depth, current_depth + 1)?;
             }
         }
     }
@@ -143,17 +196,32 @@ fn is_markdown_file(path: &Path) -> bool {
 
 fn should_ignore(path: &Path) -> bool {
     let ignored_dirs = [
-        "node_modules",
+        // Version control
         ".git",
         ".svn",
         ".hg",
+        // Compiled/Build outputs
         "target",
         "build",
         "dist",
+        // Caches
         ".cache",
         "__pycache__",
+        // Python environments
         ".venv",
         "venv",
+        // Dependencies
+        "node_modules",
+        "vendor",
+        "Packages",
+        "Pods",
+        "bower_components",
+        // Generated/Built documentation
+        "_site",
+        // Test fixtures/data
+        "fixtures",
+        "__fixtures__",
+        "test-data",
     ];
 
     if let Some(name) = path.file_name() {
@@ -237,7 +305,8 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
     // If it's a single file, just print it with full path
     if is_single_file && file_data.len() == 1 {
         let (path, headings, line_count) = &file_data[0];
-        println!("├── {}:{}", path.display(), line_count);
+        let file_size = get_file_size(path);
+        println!("├── {} {{size: {}, lines: {}}}", path.display(), file_size, line_count);
 
         if headings.is_empty() {
             println!("    └── (no headings found)");
@@ -273,8 +342,9 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
     for (_file_idx, (path, headings, line_count)) in current_files.iter().enumerate() {
         item_idx += 1;
         let file_name = path.file_name().unwrap().to_string_lossy();
+        let file_size = get_file_size(path);
 
-        println!("├── {}:{}", file_name, line_count);
+        println!("├── {} {{size: {}, lines: {}}}", file_name, file_size, line_count);
 
         // Always use │ continuation for files with headings in the root directory
         print_headings(headings, "│   ");
@@ -291,6 +361,7 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
         for (file_idx, (path, headings, line_count)) in files.iter().enumerate() {
             let is_last_file = file_idx == files.len() - 1;
             let file_name = path.file_name().unwrap().to_string_lossy();
+            let file_size = get_file_size(path);
 
             let file_prefix = if is_last_subdir && is_last_file {
                 "    └── "
@@ -302,7 +373,7 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
                 "│   ├── "
             };
 
-            println!("{}{}:{}", file_prefix, file_name, line_count);
+            println!("{}{} {{size: {}, lines: {}}}", file_prefix, file_name, file_size, line_count);
 
             // Determine heading prefix based on context
             let heading_base = if is_last_subdir && is_last_file {
@@ -317,6 +388,21 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
 
             print_headings(headings, heading_base);
         }
+    }
+}
+
+fn get_file_size(path: &PathBuf) -> String {
+    if let Ok(metadata) = fs::metadata(path) {
+        let size = metadata.len();
+        if size < 1024 {
+            format!("{}B", size)
+        } else if size < 1024 * 1024 {
+            format!("{}k", size / 1024)
+        } else {
+            format!("{}M", size / (1024 * 1024))
+        }
+    } else {
+        "?".to_string()
     }
 }
 
@@ -350,7 +436,8 @@ fn print_headings(headings: &[Heading], base_prefix: &str) {
             "├── "
         };
 
-        println!("{}{}{} [L{}]", heading_prefix, tree_char, heading.text, heading.line_number);
+        println!("{}{}{} {{line: {}}}      # Section starts on line {}",
+                 heading_prefix, tree_char, heading.text, heading.line_number, heading.line_number);
     }
 }
 

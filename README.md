@@ -18,31 +18,34 @@ Arguments:
 Options:
   -x, --non-recursive       Disable recursive directory traversal
   -n, --min-toc-depth       Minimum markdown heading level, default: 1
-  -m, --max-toc-depth       Maxiumum markdown heading level, default: 2w
+  -m, --max-toc-depth       Maximum markdown heading level, default: 2
   -a, --all                 Traverse all paths, including commonly ignored such as node_modules/
+  -d, --depth               Maximum directory depth for traversal, unlimited by default
+  -o, --output <FORMAT>     Output format: text, json, yaml (default: text)
   -h, --help                Show help and usage
   --version                 Show version information
 
 Output:
 $ lsmkd docs/
 docs/
-├── architecture.md:50                     # File is 50 lines
-│   └── Platform Architecture [L1]         # Section starts on line 1
-│       ├── Overview [L3]                  # Section starts on line 3
-|       └── Core Components [L7]
-├── prd.md:100
-│   └── Product Requirements Document [L1]
-│       ├── Executive Summary [L3]
-|       └── Business Objectives [L7]
+├── architecture.md {size: 15k, lines: 50}
+│   └── Platform Architecture {line: 1}      # Section starts on line 1
+│       ├── Overview {line: 3}               # Section starts on line 3
+|       └── Core Components {line: 7}
+├── prd.md {size: 23k, lines: 150}
+│   └── Product Requirements Document {line: 1}
+│       ├── Executive Summary {line: 3}
+|       └── Business Objectives {line: 15}
 ├── epics/
-│   ├── epic1.md:146
-|   |   └── Epic 1: Project Scaffold [L1]
-|   └── epic2.md:127
+│   ├── epic1.md {size: 8k, lines: 30}
+|   |   └── Epic 1: Project Scaffold {line: 1}
+|   └── epic2.md {size: 9k, lines: 34}
+...
 ```
 
 ## Installation
 
-`lsmkd` can be installed using Cargo, the Rust package manager.
+`lsmkd` can be installed using [Cargo](https://rust-lang.org/tools/install/), the Rust package manager.
 
 ```sh
 $ cargo install lsmkd
