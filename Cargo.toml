@@ -3,7 +3,7 @@ name = "lsmkd"
 description = "Recursively find markdown files and list them along with table of contents index"
 license = "MIT"
 version = "1.0.0"
-authors = ["Kenneth Hill <ken@sharpbits.io>"]
+authors = ["Ken Hill <ken@sharpbits.io>"]
 edition = "2024"
 repository = "https://github.com/sharpbits/lsmkd"
 rust-version = "1.92.0"
@@ -31,3 +31,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 [dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"

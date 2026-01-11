@@ -18,17 +18,26 @@ Arguments:
 Options:
   -x, --non-recursive       Disable recursive directory traversal
   -n, --min-toc-depth       Minimum markdown heading level, default: 1
-  -m, --max-toc-depth       Maxiumum markdown heading level, default: 2
+  -m, --max-toc-depth       Maxiumum markdown heading level, default: 2w
   -a, --all                 Traverse all paths, including commonly ignored such as node_modules/
   -h, --help                Show help and usage
   --version                 Show version information
-```
 
 Output:
-
-```
 $ lsmkd docs/
-...
+docs/
+├── architecture.md:50                     # File is 50 lines
+│   └── Platform Architecture [L1]         # Section starts on line 1
+│       ├── Overview [L3]                  # Section starts on line 3
+|       └── Core Components [L7]
+├── prd.md:100
+│   └── Product Requirements Document [L1]
+│       ├── Executive Summary [L3]
+|       └── Business Objectives [L7]
+├── epics/
+│   ├── epic1.md:146
+|   |   └── Epic 1: Project Scaffold [L1]
+|   └── epic2.md:127
 ```
 
 ## Installation

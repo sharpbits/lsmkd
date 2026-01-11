@@ -56,20 +56,35 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         args.files
     };
 
-    let mut markdown_files = Vec::new();
-
+    let mut first = true;
     for path in paths {
+        // Add blank line between different top-level paths
+        if !first {
+            println!();
+        }
+        first = false;
+
+        let mut markdown_files = Vec::new();
         collect_markdown_files(
             &path,
             &mut markdown_files,
             args.non_recursive,
             args.all,
         )?;
-    }
 
-    for md_file in markdown_files {
-        let headings = extract_headings(&md_file, args.min_toc_depth, args.max_toc_depth)?;
-        print_markdown_file(&md_file, &headings);
+        // Sort files to ensure consistent ordering
+        markdown_files.sort();
+
+        // Extract headings for all files
+        let mut file_data = Vec::new();
+        for md_file in markdown_files {
+            let headings = extract_headings(&md_file, args.min_toc_depth, args.max_toc_depth)?;
+            let line_count = count_lines(&md_file)?;
+            file_data.push((md_file, headings, line_count));
+        }
+
+        // Print the tree structure
+        print_tree(&path, &file_data);
     }
 
     Ok(())
@@ -157,6 +172,12 @@ fn should_ignore(path: &Path) -> bool {
     false
 }
 
+fn count_lines(file_path: &PathBuf) -> io::Result<usize> {
+    let file = fs::File::open(file_path)?;
+    let reader = io::BufReader::new(file);
+    Ok(reader.lines().count())
+}
+
 fn extract_headings(
     md_file: &PathBuf,
     min_depth: usize,
@@ -189,19 +210,148 @@ fn extract_headings(
     Ok(headings)
 }
 
-fn print_markdown_file(path: &PathBuf, headings: &[Heading]) {
-    println!("{}", path.display());
+fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
+    use std::collections::BTreeMap;
 
-    if headings.is_empty() {
-        println!("  (no headings found)");
-    } else {
-        for heading in headings {
-            let indent = "  ".repeat(heading.level - 1);
-            println!("{}{}:{} {}", indent, path.display(), heading.line_number, heading.text);
-        }
+    if file_data.is_empty() {
+        return;
     }
 
-    println!();
+    // Determine if we're processing a single file or a directory
+    let is_single_file = root_path.is_file();
+
+    // Determine the base directory
+    let base_dir = if root_path.is_dir() {
+        root_path
+    } else if root_path.is_file() {
+        root_path.parent().unwrap_or_else(|| Path::new("."))
+    } else {
+        Path::new(".")
+    };
+
+    // Print root directory name if it's a directory
+    if root_path.is_dir() {
+        println!("{}/", root_path.display());
+    }
+
+    // If it's a single file, just print it with full path
+    if is_single_file && file_data.len() == 1 {
+        let (path, headings, line_count) = &file_data[0];
+        println!("├── {}:{}", path.display(), line_count);
+
+        if headings.is_empty() {
+            println!("    └── (no headings found)");
+        } else {
+            print_headings(headings, "    ");
+        }
+        return;
+    }
+
+    // Group files by their directory relative to base
+    let mut dir_map: BTreeMap<PathBuf, Vec<&(PathBuf, Vec<Heading>, usize)>> = BTreeMap::new();
+
+    for item in file_data {
+        let file_dir = item.0.parent().unwrap_or_else(|| Path::new("."));
+        let rel_dir = if file_dir == base_dir {
+            PathBuf::from(".")
+        } else {
+            file_dir.strip_prefix(base_dir).unwrap_or(file_dir).to_path_buf()
+        };
+        dir_map.entry(rel_dir).or_insert_with(Vec::new).push(item);
+    }
+
+    // Separate current dir files from subdirectories
+    let current_files = dir_map.remove(Path::new(".")).unwrap_or_default();
+    let mut subdirs: Vec<_> = dir_map.into_iter().collect();
+    subdirs.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // Count total items (files + subdirs) to determine last item
+    let total_items = current_files.len() + subdirs.len();
+    let mut item_idx = 0;
+
+    // Print files in current directory first
+    for (_file_idx, (path, headings, line_count)) in current_files.iter().enumerate() {
+        item_idx += 1;
+        let file_name = path.file_name().unwrap().to_string_lossy();
+
+        println!("├── {}:{}", file_name, line_count);
+
+        // Always use │ continuation for files with headings in the root directory
+        print_headings(headings, "│   ");
+    }
+
+    // Print subdirectories and their files
+    for (subdir, files) in subdirs.iter() {
+        item_idx += 1;
+        let is_last_subdir = item_idx == total_items;
+
+        println!("├── {}/", subdir.display());
+
+        // Print files in this subdirectory
+        for (file_idx, (path, headings, line_count)) in files.iter().enumerate() {
+            let is_last_file = file_idx == files.len() - 1;
+            let file_name = path.file_name().unwrap().to_string_lossy();
+
+            let file_prefix = if is_last_subdir && is_last_file {
+                "    └── "
+            } else if is_last_file {
+                "│   └── "
+            } else if is_last_subdir {
+                "    ├── "
+            } else {
+                "│   ├── "
+            };
+
+            println!("{}{}:{}", file_prefix, file_name, line_count);
+
+            // Determine heading prefix based on context
+            let heading_base = if is_last_subdir && is_last_file {
+                "        "
+            } else if is_last_file {
+                "│       "
+            } else if is_last_subdir {
+                "    │   "
+            } else {
+                "│   │   "
+            };
+
+            print_headings(headings, heading_base);
+        }
+    }
+}
+
+fn print_headings(headings: &[Heading], base_prefix: &str) {
+    if headings.is_empty() {
+        return;
+    }
+
+    // Check if there's only one level-1 heading or multiple
+    let level_1_count = headings.iter().filter(|h| h.level == 1).count();
+
+    for (h_idx, heading) in headings.iter().enumerate() {
+        let is_last_at_this_level = !headings.iter().skip(h_idx + 1).any(|h| h.level <= heading.level);
+
+        // Build indentation for heading level
+        let mut heading_prefix = String::from(base_prefix);
+
+        if heading.level > 1 {
+            for level in 1..heading.level {
+                let has_continuation = headings.iter().skip(h_idx + 1).any(|h| h.level <= level);
+                heading_prefix.push_str(if has_continuation { "│   " } else { "    " });
+            }
+        }
+
+        // For level-1 headings, use └── if it's the only one or the last one
+        let tree_char = if heading.level == 1 && level_1_count == 1 {
+            "└── "
+        } else if is_last_at_this_level {
+            "└── "
+        } else {
+            "├── "
+        };
+
+        println!("{}{}{} [L{}]", heading_prefix, tree_char, heading.text, heading.line_number);
+    }
 }
 
 #[cfg(test)]
