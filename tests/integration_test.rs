@@ -489,3 +489,120 @@ fn test_text_output_explicit() {
         .stdout(predicate::str::contains("test.md"))
         .stdout(predicate::str::contains("Heading {line: 1}"));
 }
+
+/// Test tokens flag shows token estimates for files
+#[test]
+fn test_tokens_flag_file() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("test.md"), "# Heading\nSome content here.\n").unwrap();
+
+    let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
+    cmd.arg("-t").arg(temp_dir.path());
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("test.md"))
+        .stdout(predicate::str::contains("tokens:"));
+}
+
+/// Test tokens flag shows token estimates for sections
+#[test]
+fn test_tokens_flag_sections() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(
+        temp_dir.path().join("test.md"),
+        "# First Section\nThis is some content.\n\n# Second Section\nMore content here.\n",
+    )
+    .unwrap();
+
+    let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
+    cmd.arg("-t").arg(temp_dir.path());
+
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    // Should show tokens for both file and sections
+    assert!(stdout.contains("tokens:"));
+    assert!(stdout.contains("First Section"));
+    assert!(stdout.contains("Second Section"));
+}
+
+/// Test tokens flag with verbose shows total tokens
+#[test]
+fn test_tokens_with_verbose() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("test.md"), "# Heading\nSome content.\n").unwrap();
+
+    let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
+    cmd.arg("-t").arg("-v").arg(temp_dir.path());
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Total tokens:"));
+}
+
+/// Test tokens flag in JSON output
+#[test]
+fn test_tokens_json_output() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("test.md"), "# Heading\nContent here.\n").unwrap();
+
+    let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
+    cmd.arg("-t").arg("-o").arg("json").arg(temp_dir.path());
+
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    assert!(serde_json::from_str::<Vec<serde_json::Value>>(&stdout).is_ok());
+    assert!(stdout.contains("\"tokens\""));
+}
+
+/// Test tokens flag in YAML output
+#[test]
+fn test_tokens_yaml_output() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("test.md"), "# Heading\nContent.\n").unwrap();
+
+    let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
+    cmd.arg("-t").arg("-o").arg("yaml").arg(temp_dir.path());
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("tokens:"));
+}
+
+/// Test token estimation calculation (3.5 chars per token)
+#[test]
+fn test_token_estimation_accuracy() {
+    let temp_dir = TempDir::new().unwrap();
+    // Create content with known character count: 35 characters should be 10 tokens
+    fs::write(
+        temp_dir.path().join("test.md"),
+        "# Test\n01234567890123456789012345",
+    )
+    .unwrap();
+
+    let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
+    cmd.arg("-t").arg("-o").arg("json").arg(temp_dir.path());
+
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+
+    // Verify tokens field exists and is a number
+    assert!(json[0]["tokens"].is_number());
+}
+
+/// Test that without tokens flag, no tokens are shown
+#[test]
+fn test_no_tokens_without_flag() {
+    let temp_dir = TempDir::new().unwrap();
+    fs::write(temp_dir.path().join("test.md"), "# Heading\nContent.\n").unwrap();
+
+    let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
+    cmd.arg(temp_dir.path());
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("tokens:").not());
+}

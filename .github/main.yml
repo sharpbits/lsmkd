@@ -13,14 +13,6 @@ jobs:
             os: ubuntu-latest
             rust: stable
             target: x86_64-unknown-linux-gnu
-          - name: beta linux
-            os: ubuntu-latest
-            rust: beta
-            target: x86_64-unknown-linux-gnu
-          - name: nightly linux
-            os: ubuntu-latest
-            rust: nightly
-            target: x86_64-unknown-linux-gnu
           - name: stable x86_64-unknown-linux-musl
             os: ubuntu-22.04
             rust: stable

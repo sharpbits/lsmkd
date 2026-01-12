@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::fs;
 use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(name = "lsmkd")]
@@ -37,6 +38,14 @@ struct Args {
     /// Output format
     #[arg(short = 'o', long = "output", default_value = "text")]
     output: OutputFormat,
+
+    /// Verbose output with statistics
+    #[arg(short = 'v', long = "verbose")]
+    verbose: bool,
+
+    /// Include token estimates in output (using 3.5 chars per token)
+    #[arg(short = 't', long = "tokens")]
+    tokens: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -51,6 +60,8 @@ struct Heading {
     level: usize,
     text: String,
     line_number: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -59,6 +70,16 @@ struct FileInfo {
     size: u64,
     lines: usize,
     headings: Vec<Heading>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens: Option<usize>,
+}
+
+#[derive(Debug, Default)]
+struct ScanStatistics {
+    files_scanned: usize,
+    total_lines: usize,
+    total_bytes: u64,
+    total_tokens: usize,
 }
 
 fn main() {
@@ -74,6 +95,8 @@ fn main() {
 }
 
 fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let start_time = Instant::now();
+
     let paths = if args.files.is_empty() {
         vec![PathBuf::from(".")]
     } else {
@@ -81,6 +104,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut all_files: Vec<FileInfo> = Vec::new();
+    let mut stats = ScanStatistics::default();
 
     for path in &paths {
         let mut markdown_files = Vec::new();
@@ -96,15 +120,29 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         markdown_files.sort();
 
         for md_file in markdown_files {
-            let headings = extract_headings(&md_file, args.min_toc_depth, args.max_toc_depth)?;
+            let headings = extract_headings(&md_file, args.min_toc_depth, args.max_toc_depth, args.tokens)?;
             let line_count = count_lines(&md_file)?;
             let size = fs::metadata(&md_file)?.len();
+
+            let file_tokens = if args.tokens {
+                let content = fs::read_to_string(&md_file)?;
+                let tokens = estimate_tokens(&content);
+                stats.total_tokens += tokens;
+                Some(tokens)
+            } else {
+                None
+            };
+
+            stats.files_scanned += 1;
+            stats.total_lines += line_count;
+            stats.total_bytes += size;
 
             all_files.push(FileInfo {
                 path: md_file.display().to_string(),
                 size,
                 lines: line_count,
                 headings,
+                tokens: file_tokens,
             });
         }
     }
@@ -124,12 +162,26 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 let file_data: Vec<_> = all_files
                     .iter()
                     .filter(|f| f.path.starts_with(&path_str))
-                    .map(|f| (PathBuf::from(&f.path), f.headings.clone(), f.lines))
+                    .map(|f| (PathBuf::from(&f.path), f.headings.clone(), f.lines, f.tokens))
                     .collect();
 
-                print_tree(path, &file_data);
+                print_tree(path, &file_data, args.tokens);
             }
         }
+    }
+
+    let elapsed = start_time.elapsed();
+
+    if args.verbose {
+        println!();
+        println!("Statistics:");
+        println!("  Files scanned: {}", stats.files_scanned);
+        println!("  Total lines: {}", stats.total_lines);
+        println!("  Total bytes: {}", format_bytes(stats.total_bytes));
+        if args.tokens {
+            println!("  Total tokens: {}", stats.total_tokens);
+        }
+        println!("  Time taken: {:.3}s", elapsed.as_secs_f64());
     }
 
     Ok(())
@@ -246,20 +298,31 @@ fn count_lines(file_path: &PathBuf) -> io::Result<usize> {
     Ok(reader.lines().count())
 }
 
+fn estimate_tokens(text: &str) -> usize {
+    let char_count = text.chars().count();
+    ((char_count as f64) / 3.5).ceil() as usize
+}
+
 fn extract_headings(
     md_file: &PathBuf,
     min_depth: usize,
     max_depth: usize,
+    calculate_tokens: bool,
 ) -> io::Result<Vec<Heading>> {
     let file = fs::File::open(md_file)?;
     let reader = io::BufReader::new(file);
 
     let heading_re = Regex::new(r"^(#{1,6})\s+(.+)$").unwrap();
     let mut headings = Vec::new();
+    let mut all_lines: Vec<String> = Vec::new();
 
     for (line_num, line) in reader.lines().enumerate() {
         let line = line?;
         let line_number = line_num + 1; // Line numbers start at 1
+
+        if calculate_tokens {
+            all_lines.push(line.clone());
+        }
 
         if let Some(captures) = heading_re.captures(&line) {
             let level = captures.get(1).unwrap().as_str().len();
@@ -270,15 +333,40 @@ fn extract_headings(
                     level,
                     text,
                     line_number,
+                    tokens: None,
                 });
             }
+        }
+    }
+
+    // Calculate tokens for each section
+    if calculate_tokens && !headings.is_empty() {
+        for i in 0..headings.len() {
+            let start_line = headings[i].line_number - 1; // Convert to 0-indexed
+            let end_line = if i + 1 < headings.len() {
+                // Find the next heading at the same or higher level (lower number)
+                let mut next_idx = i + 1;
+                while next_idx < headings.len() && headings[next_idx].level > headings[i].level {
+                    next_idx += 1;
+                }
+                if next_idx < headings.len() {
+                    headings[next_idx].line_number - 1
+                } else {
+                    all_lines.len()
+                }
+            } else {
+                all_lines.len()
+            };
+
+            let section_text: String = all_lines[start_line..end_line].join("\n");
+            headings[i].tokens = Some(estimate_tokens(&section_text));
         }
     }
 
     Ok(headings)
 }
 
-fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
+fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize, Option<usize>)], show_tokens: bool) {
     use std::collections::BTreeMap;
 
     if file_data.is_empty() {
@@ -304,20 +392,28 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
 
     // If it's a single file, just print it with full path
     if is_single_file && file_data.len() == 1 {
-        let (path, headings, line_count) = &file_data[0];
+        let (path, headings, line_count, file_tokens) = &file_data[0];
         let file_size = get_file_size(path);
-        println!("├── {} {{size: {}, lines: {}}}", path.display(), file_size, line_count);
+        if show_tokens {
+            if let Some(tokens) = file_tokens {
+                println!("├── {} {{size: {}, lines: {}, tokens: {}}}", path.display(), file_size, line_count, tokens);
+            } else {
+                println!("├── {} {{size: {}, lines: {}}}", path.display(), file_size, line_count);
+            }
+        } else {
+            println!("├── {} {{size: {}, lines: {}}}", path.display(), file_size, line_count);
+        }
 
         if headings.is_empty() {
             println!("    └── (no headings found)");
         } else {
-            print_headings(headings, "    ");
+            print_headings(headings, "    ", show_tokens);
         }
         return;
     }
 
     // Group files by their directory relative to base
-    let mut dir_map: BTreeMap<PathBuf, Vec<&(PathBuf, Vec<Heading>, usize)>> = BTreeMap::new();
+    let mut dir_map: BTreeMap<PathBuf, Vec<&(PathBuf, Vec<Heading>, usize, Option<usize>)>> = BTreeMap::new();
 
     for item in file_data {
         let file_dir = item.0.parent().unwrap_or_else(|| Path::new("."));
@@ -339,15 +435,23 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
     let mut item_idx = 0;
 
     // Print files in current directory first
-    for (_file_idx, (path, headings, line_count)) in current_files.iter().enumerate() {
+    for (_file_idx, (path, headings, line_count, file_tokens)) in current_files.iter().enumerate() {
         item_idx += 1;
         let file_name = path.file_name().unwrap().to_string_lossy();
         let file_size = get_file_size(path);
 
-        println!("├── {} {{size: {}, lines: {}}}", file_name, file_size, line_count);
+        if show_tokens {
+            if let Some(tokens) = file_tokens {
+                println!("├── {} {{size: {}, lines: {}, tokens: {}}}", file_name, file_size, line_count, tokens);
+            } else {
+                println!("├── {} {{size: {}, lines: {}}}", file_name, file_size, line_count);
+            }
+        } else {
+            println!("├── {} {{size: {}, lines: {}}}", file_name, file_size, line_count);
+        }
 
         // Always use │ continuation for files with headings in the root directory
-        print_headings(headings, "│   ");
+        print_headings(headings, "│   ", show_tokens);
     }
 
     // Print subdirectories and their files
@@ -358,7 +462,7 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
         println!("├── {}/", subdir.display());
 
         // Print files in this subdirectory
-        for (file_idx, (path, headings, line_count)) in files.iter().enumerate() {
+        for (file_idx, (path, headings, line_count, file_tokens)) in files.iter().enumerate() {
             let is_last_file = file_idx == files.len() - 1;
             let file_name = path.file_name().unwrap().to_string_lossy();
             let file_size = get_file_size(path);
@@ -373,7 +477,15 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
                 "│   ├── "
             };
 
-            println!("{}{} {{size: {}, lines: {}}}", file_prefix, file_name, file_size, line_count);
+            if show_tokens {
+                if let Some(tokens) = file_tokens {
+                    println!("{}{} {{size: {}, lines: {}, tokens: {}}}", file_prefix, file_name, file_size, line_count, tokens);
+                } else {
+                    println!("{}{} {{size: {}, lines: {}}}", file_prefix, file_name, file_size, line_count);
+                }
+            } else {
+                println!("{}{} {{size: {}, lines: {}}}", file_prefix, file_name, file_size, line_count);
+            }
 
             // Determine heading prefix based on context
             let heading_base = if is_last_subdir && is_last_file {
@@ -386,7 +498,7 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize)]) {
                 "│   │   "
             };
 
-            print_headings(headings, heading_base);
+            print_headings(headings, heading_base, show_tokens);
         }
     }
 }
@@ -406,7 +518,19 @@ fn get_file_size(path: &PathBuf) -> String {
     }
 }
 
-fn print_headings(headings: &[Heading], base_prefix: &str) {
+fn format_bytes(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{} bytes", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.2} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
+}
+
+fn print_headings(headings: &[Heading], base_prefix: &str, show_tokens: bool) {
     if headings.is_empty() {
         return;
     }
@@ -436,8 +560,18 @@ fn print_headings(headings: &[Heading], base_prefix: &str) {
             "├── "
         };
 
-        println!("{}{}{} {{line: {}}}      # Section starts on line {}",
-                 heading_prefix, tree_char, heading.text, heading.line_number, heading.line_number);
+        if show_tokens {
+            if let Some(tokens) = heading.tokens {
+                println!("{}{}{} {{line: {}, tokens: {}}}",
+                         heading_prefix, tree_char, heading.text, heading.line_number, tokens);
+            } else {
+                println!("{}{}{} {{line: {}}}",
+                         heading_prefix, tree_char, heading.text, heading.line_number);
+            }
+        } else {
+            println!("{}{}{} {{line: {}}}",
+                     heading_prefix, tree_char, heading.text, heading.line_number);
+        }
     }
 }
 
