@@ -2,7 +2,7 @@
 name = "lsmkd"
 description = "Recursively find markdown files and list them along with table of contents index"
 license = "MIT"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["Ken Hill <ken@sharpbits.io>"]
 edition = "2024"
 repository = "https://github.com/sharpbits/lsmkd"
