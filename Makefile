@@ -15,6 +15,9 @@ clean:
 install:
 	cargo install --path .
 
+lint:
+	cargo clippy --workspace --all-targets --no-deps -- -D warnings
+
 help:
 	@echo "Available targets:"
 	@echo "  build    - Build debug version"

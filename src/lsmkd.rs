@@ -82,6 +82,8 @@ struct ScanStatistics {
     total_tokens: usize,
 }
 
+type FileDataItem = (PathBuf, Vec<Heading>, usize, Option<usize>);
+
 fn main() {
     let args = Args::parse();
 
@@ -109,7 +111,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     for path in &paths {
         let mut markdown_files = Vec::new();
         collect_markdown_files(
-            &path,
+            path,
             &mut markdown_files,
             args.non_recursive,
             args.all,
@@ -224,11 +226,10 @@ fn collect_markdown_files(
                 files.push(entry_path);
             } else if entry_path.is_dir() && !non_recursive {
                 // Check if we've exceeded the maximum depth before recursing
-                if let Some(max) = max_depth {
-                    if current_depth >= max {
+                if let Some(max) = max_depth
+                    && current_depth >= max {
                         continue;
                     }
-                }
                 collect_markdown_files(&entry_path, files, non_recursive, all, max_depth, current_depth + 1)?;
             }
         }
@@ -366,7 +367,7 @@ fn extract_headings(
     Ok(headings)
 }
 
-fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize, Option<usize>)], show_tokens: bool) {
+fn print_tree(root_path: &Path, file_data: &[FileDataItem], show_tokens: bool) {
     use std::collections::BTreeMap;
 
     if file_data.is_empty() {
@@ -413,7 +414,7 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize, Opti
     }
 
     // Group files by their directory relative to base
-    let mut dir_map: BTreeMap<PathBuf, Vec<&(PathBuf, Vec<Heading>, usize, Option<usize>)>> = BTreeMap::new();
+    let mut dir_map: BTreeMap<PathBuf, Vec<&FileDataItem>> = BTreeMap::new();
 
     for item in file_data {
         let file_dir = item.0.parent().unwrap_or_else(|| Path::new("."));
@@ -422,7 +423,7 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize, Opti
         } else {
             file_dir.strip_prefix(base_dir).unwrap_or(file_dir).to_path_buf()
         };
-        dir_map.entry(rel_dir).or_insert_with(Vec::new).push(item);
+        dir_map.entry(rel_dir).or_default().push(item);
     }
 
     // Separate current dir files from subdirectories
@@ -435,7 +436,7 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize, Opti
     let mut item_idx = 0;
 
     // Print files in current directory first
-    for (_file_idx, (path, headings, line_count, file_tokens)) in current_files.iter().enumerate() {
+    for (path, headings, line_count, file_tokens) in current_files.iter() {
         item_idx += 1;
         let file_name = path.file_name().unwrap().to_string_lossy();
         let file_size = get_file_size(path);
@@ -552,9 +553,7 @@ fn print_headings(headings: &[Heading], base_prefix: &str, show_tokens: bool) {
         }
 
         // For level-1 headings, use └── if it's the only one or the last one
-        let tree_char = if heading.level == 1 && level_1_count == 1 {
-            "└── "
-        } else if is_last_at_this_level {
+        let tree_char = if (heading.level == 1 && level_1_count == 1) || is_last_at_this_level {
             "└── "
         } else {
             "├── "
