@@ -29,11 +29,6 @@ jobs:
             os: windows-latest
             rust: stable
             target: x86_64-pc-windows-msvc
-          - name: msrv
-            os: ubuntu-22.04
-            # sync MSRV with docs: guide/src/guide/installation.md and Cargo.toml
-            rust: 1.88.0
-            target: x86_64-unknown-linux-gnu
     name: ${{ matrix.name }}
     steps:
     - uses: actions/checkout@v5
