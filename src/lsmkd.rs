@@ -82,6 +82,8 @@ struct ScanStatistics {
     total_tokens: usize,
 }
 
+type FileDataItem = (PathBuf, Vec<Heading>, usize, Option<usize>);
+
 fn main() {
     let args = Args::parse();
 
@@ -109,7 +111,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     for path in &paths {
         let mut markdown_files = Vec::new();
         collect_markdown_files(
-            &path,
+            path,
             &mut markdown_files,
             args.non_recursive,
             args.all,
@@ -120,7 +122,12 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         markdown_files.sort();
 
         for md_file in markdown_files {
-            let headings = extract_headings(&md_file, args.min_toc_depth, args.max_toc_depth, args.tokens)?;
+            let headings = extract_headings(
+                &md_file,
+                args.min_toc_depth,
+                args.max_toc_depth,
+                args.tokens,
+            )?;
             let line_count = count_lines(&md_file)?;
             let size = fs::metadata(&md_file)?.len();
 
@@ -162,7 +169,14 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 let file_data: Vec<_> = all_files
                     .iter()
                     .filter(|f| f.path.starts_with(&path_str))
-                    .map(|f| (PathBuf::from(&f.path), f.headings.clone(), f.lines, f.tokens))
+                    .map(|f| {
+                        (
+                            PathBuf::from(&f.path),
+                            f.headings.clone(),
+                            f.lines,
+                            f.tokens,
+                        )
+                    })
                     .collect();
 
                 print_tree(path, &file_data, args.tokens);
@@ -224,12 +238,19 @@ fn collect_markdown_files(
                 files.push(entry_path);
             } else if entry_path.is_dir() && !non_recursive {
                 // Check if we've exceeded the maximum depth before recursing
-                if let Some(max) = max_depth {
-                    if current_depth >= max {
-                        continue;
-                    }
+                if let Some(max) = max_depth
+                    && current_depth >= max
+                {
+                    continue;
                 }
-                collect_markdown_files(&entry_path, files, non_recursive, all, max_depth, current_depth + 1)?;
+                collect_markdown_files(
+                    &entry_path,
+                    files,
+                    non_recursive,
+                    all,
+                    max_depth,
+                    current_depth + 1,
+                )?;
             }
         }
     }
@@ -366,7 +387,7 @@ fn extract_headings(
     Ok(headings)
 }
 
-fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize, Option<usize>)], show_tokens: bool) {
+fn print_tree(root_path: &Path, file_data: &[FileDataItem], show_tokens: bool) {
     use std::collections::BTreeMap;
 
     if file_data.is_empty() {
@@ -396,12 +417,28 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize, Opti
         let file_size = get_file_size(path);
         if show_tokens {
             if let Some(tokens) = file_tokens {
-                println!("├── {} {{size: {}, lines: {}, tokens: {}}}", path.display(), file_size, line_count, tokens);
+                println!(
+                    "├── {} {{size: {}, lines: {}, tokens: {}}}",
+                    path.display(),
+                    file_size,
+                    line_count,
+                    tokens
+                );
             } else {
-                println!("├── {} {{size: {}, lines: {}}}", path.display(), file_size, line_count);
+                println!(
+                    "├── {} {{size: {}, lines: {}}}",
+                    path.display(),
+                    file_size,
+                    line_count
+                );
             }
         } else {
-            println!("├── {} {{size: {}, lines: {}}}", path.display(), file_size, line_count);
+            println!(
+                "├── {} {{size: {}, lines: {}}}",
+                path.display(),
+                file_size,
+                line_count
+            );
         }
 
         if headings.is_empty() {
@@ -413,16 +450,19 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize, Opti
     }
 
     // Group files by their directory relative to base
-    let mut dir_map: BTreeMap<PathBuf, Vec<&(PathBuf, Vec<Heading>, usize, Option<usize>)>> = BTreeMap::new();
+    let mut dir_map: BTreeMap<PathBuf, Vec<&FileDataItem>> = BTreeMap::new();
 
     for item in file_data {
         let file_dir = item.0.parent().unwrap_or_else(|| Path::new("."));
         let rel_dir = if file_dir == base_dir {
             PathBuf::from(".")
         } else {
-            file_dir.strip_prefix(base_dir).unwrap_or(file_dir).to_path_buf()
+            file_dir
+                .strip_prefix(base_dir)
+                .unwrap_or(file_dir)
+                .to_path_buf()
         };
-        dir_map.entry(rel_dir).or_insert_with(Vec::new).push(item);
+        dir_map.entry(rel_dir).or_default().push(item);
     }
 
     // Separate current dir files from subdirectories
@@ -435,19 +475,28 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize, Opti
     let mut item_idx = 0;
 
     // Print files in current directory first
-    for (_file_idx, (path, headings, line_count, file_tokens)) in current_files.iter().enumerate() {
+    for (path, headings, line_count, file_tokens) in current_files.iter() {
         item_idx += 1;
         let file_name = path.file_name().unwrap().to_string_lossy();
         let file_size = get_file_size(path);
 
         if show_tokens {
             if let Some(tokens) = file_tokens {
-                println!("├── {} {{size: {}, lines: {}, tokens: {}}}", file_name, file_size, line_count, tokens);
+                println!(
+                    "├── {} {{size: {}, lines: {}, tokens: {}}}",
+                    file_name, file_size, line_count, tokens
+                );
             } else {
-                println!("├── {} {{size: {}, lines: {}}}", file_name, file_size, line_count);
+                println!(
+                    "├── {} {{size: {}, lines: {}}}",
+                    file_name, file_size, line_count
+                );
             }
         } else {
-            println!("├── {} {{size: {}, lines: {}}}", file_name, file_size, line_count);
+            println!(
+                "├── {} {{size: {}, lines: {}}}",
+                file_name, file_size, line_count
+            );
         }
 
         // Always use │ continuation for files with headings in the root directory
@@ -479,12 +528,21 @@ fn print_tree(root_path: &Path, file_data: &[(PathBuf, Vec<Heading>, usize, Opti
 
             if show_tokens {
                 if let Some(tokens) = file_tokens {
-                    println!("{}{} {{size: {}, lines: {}, tokens: {}}}", file_prefix, file_name, file_size, line_count, tokens);
+                    println!(
+                        "{}{} {{size: {}, lines: {}, tokens: {}}}",
+                        file_prefix, file_name, file_size, line_count, tokens
+                    );
                 } else {
-                    println!("{}{} {{size: {}, lines: {}}}", file_prefix, file_name, file_size, line_count);
+                    println!(
+                        "{}{} {{size: {}, lines: {}}}",
+                        file_prefix, file_name, file_size, line_count
+                    );
                 }
             } else {
-                println!("{}{} {{size: {}, lines: {}}}", file_prefix, file_name, file_size, line_count);
+                println!(
+                    "{}{} {{size: {}, lines: {}}}",
+                    file_prefix, file_name, file_size, line_count
+                );
             }
 
             // Determine heading prefix based on context
@@ -539,7 +597,10 @@ fn print_headings(headings: &[Heading], base_prefix: &str, show_tokens: bool) {
     let level_1_count = headings.iter().filter(|h| h.level == 1).count();
 
     for (h_idx, heading) in headings.iter().enumerate() {
-        let is_last_at_this_level = !headings.iter().skip(h_idx + 1).any(|h| h.level <= heading.level);
+        let is_last_at_this_level = !headings
+            .iter()
+            .skip(h_idx + 1)
+            .any(|h| h.level <= heading.level);
 
         // Build indentation for heading level
         let mut heading_prefix = String::from(base_prefix);
@@ -552,9 +613,7 @@ fn print_headings(headings: &[Heading], base_prefix: &str, show_tokens: bool) {
         }
 
         // For level-1 headings, use └── if it's the only one or the last one
-        let tree_char = if heading.level == 1 && level_1_count == 1 {
-            "└── "
-        } else if is_last_at_this_level {
+        let tree_char = if (heading.level == 1 && level_1_count == 1) || is_last_at_this_level {
             "└── "
         } else {
             "├── "
@@ -562,15 +621,21 @@ fn print_headings(headings: &[Heading], base_prefix: &str, show_tokens: bool) {
 
         if show_tokens {
             if let Some(tokens) = heading.tokens {
-                println!("{}{}{} {{line: {}, tokens: {}}}",
-                         heading_prefix, tree_char, heading.text, heading.line_number, tokens);
+                println!(
+                    "{}{}{} {{line: {}, tokens: {}}}",
+                    heading_prefix, tree_char, heading.text, heading.line_number, tokens
+                );
             } else {
-                println!("{}{}{} {{line: {}}}",
-                         heading_prefix, tree_char, heading.text, heading.line_number);
+                println!(
+                    "{}{}{} {{line: {}}}",
+                    heading_prefix, tree_char, heading.text, heading.line_number
+                );
             }
         } else {
-            println!("{}{}{} {{line: {}}}",
-                     heading_prefix, tree_char, heading.text, heading.line_number);
+            println!(
+                "{}{}{} {{line: {}}}",
+                heading_prefix, tree_char, heading.text, heading.line_number
+            );
         }
     }
 }
