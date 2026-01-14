@@ -8,7 +8,7 @@ This utility is explicitly only read-only, it does not modify markdown files to 
 
 ## Usage
 
-```sh
+```
 $ lsmkd -h
 List and index markdown files with table-of-contents and line numbers
 
