@@ -20,19 +20,23 @@ export CARGO_PROFILE_RELEASE_LTO=true
 
 cargo build --locked --bin $BINARY_NAME --release --target $TARGET
 
+# Strip -unknown and -pc vendor identifiers from target for cleaner filenames
+CLEAN_TARGET=${TARGET//-unknown/}
+CLEAN_TARGET=${CLEAN_TARGET//-pc/}
+
 cd target/$TARGET/release
 
 case $OS in
   ubuntu*)
-    asset="$BINARY_NAME-$TAG-$TARGET.tar.gz"
+    asset="$BINARY_NAME-$TAG-$CLEAN_TARGET.tar.gz"
     tar czf ../../$asset $BINARY_NAME
     ;;
   macos*)
-    asset="$BINARY_NAME-$TAG-$TARGET.tar.gz"
+    asset="$BINARY_NAME-$TAG-$CLEAN_TARGET.tar.gz"
     tar czf ../../$asset $BINARY_NAME
     ;;
   windows*)
-    asset="$BINARY_NAME-$TAG-$TARGET.zip"
+    asset="$BINARY_NAME-$TAG-$CLEAN_TARGET.zip"
     7z a ../../$asset $BINARY_NAME.exe
     ;;
   *)
