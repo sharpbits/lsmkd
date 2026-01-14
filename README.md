@@ -82,7 +82,7 @@ Binaries can be downloaded from the [release page](https://github.com/sharpbits/
 Add the following to your coding agent instructions:
 
 ```
-CRITICAL: LLM context is limited! To conserve context when searching local files for documentation, use the `lsmkd <path(s)>` command instead of `ls` or `find` to list and index all markdown files with heading line numbers then READ ONLY RELEVANT sections of relevant files for the requested task.
+IT IS CRITICAL THAT YOU FOLLOW THIS COMMAND: LLM context is limited! To conserve context tokens when searching and reading markdown documentation, use the `lsmkd <path(s)>` command instead of `ls` or `find`. This command will list and index all markdown files with heading line numbers. ONLY READ RELEVANT sections of relevant files for the requested task. DO NOT use `find` for markdown (*.md), only use `lsmkd`.
 ```
 
 ## Benchmarks
