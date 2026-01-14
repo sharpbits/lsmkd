@@ -26,6 +26,7 @@ jobs:
       - name: Update Cargo.toml version
         run: |
           sed -i 's/^version = ".*"/version = "${{ inputs.version }}"/' Cargo.toml
+          cargo update
 
       - name: Commit version change
         run: |
