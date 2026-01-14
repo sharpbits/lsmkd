@@ -44,6 +44,15 @@ jobs:
     - name: Test no default
       run: cargo test --workspace --no-default-features --target ${{ matrix.target }}
 
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust
+        run: bash ci/install-rust.sh stable x86_64-unknown-linux-gnu
+      - run: rustup component add rustfmt
+      - run: cargo fmt --check
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -61,3 +70,17 @@ jobs:
       run: bash ci/install-rust.sh stable aarch64-unknown-linux-musl
     - name: Build
       run: cargo build --locked --target aarch64-unknown-linux-musl
+
+  success:
+    name: Success gate
+    if: always()
+    needs:
+      - test
+      - format
+      - lint
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - run: jq --exit-status 'all(.result == "success")' <<< '${{ toJson(needs) }}'
+      - name: Done
+        run: exit 0

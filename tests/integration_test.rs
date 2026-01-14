@@ -14,7 +14,9 @@ fn test_architecture_doc_sample() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("tests/docs/architecture.md"))
-        .stdout(predicate::str::contains("Zephyr Platform Architecture {line: 1}"))
+        .stdout(predicate::str::contains(
+            "Zephyr Platform Architecture {line: 1}",
+        ))
         .stdout(predicate::str::contains("Overview {line: 3}"))
         .stdout(predicate::str::contains("Core Components {line: 7}"))
         .stdout(predicate::str::contains("Data Flow {line: 30}"))
@@ -31,13 +33,19 @@ fn test_prd_doc_sample() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("tests/docs/prd.md"))
-        .stdout(predicate::str::contains("Zephyr Platform - Product Requirements Document {line: 1}"))
+        .stdout(predicate::str::contains(
+            "Zephyr Platform - Product Requirements Document {line: 1}",
+        ))
         .stdout(predicate::str::contains("Executive Summary {line: 7}"))
         .stdout(predicate::str::contains("Business Objectives {line: 11}"))
         .stdout(predicate::str::contains("Target Users {line: 18}"))
         .stdout(predicate::str::contains("Core Features {line: 24}"))
-        .stdout(predicate::str::contains("Non-Functional Requirements {line: 66}"))
-        .stdout(predicate::str::contains("Deployment Constraints {line: 77}"))
+        .stdout(predicate::str::contains(
+            "Non-Functional Requirements {line: 66}",
+        ))
+        .stdout(predicate::str::contains(
+            "Deployment Constraints {line: 77}",
+        ))
         .stdout(predicate::str::contains("Success Metrics {line: 83}"))
         .stdout(predicate::str::contains("Timeline {line: 90}"))
         .stdout(predicate::str::contains("Assumptions {line: 97}"))
@@ -241,7 +249,11 @@ fn test_markdown_extensions() {
     let temp_dir = TempDir::new().unwrap();
 
     fs::write(temp_dir.path().join("test.md"), "# MD Extension\n").unwrap();
-    fs::write(temp_dir.path().join("test.markdown"), "# Markdown Extension\n").unwrap();
+    fs::write(
+        temp_dir.path().join("test.markdown"),
+        "# Markdown Extension\n",
+    )
+    .unwrap();
     fs::write(temp_dir.path().join("test.txt"), "# Not Markdown\n").unwrap();
 
     let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
@@ -437,7 +449,11 @@ fn test_unlimited_depth_default() {
 #[test]
 fn test_json_output() {
     let temp_dir = TempDir::new().unwrap();
-    fs::write(temp_dir.path().join("test.md"), "# Heading\n## Subheading\n").unwrap();
+    fs::write(
+        temp_dir.path().join("test.md"),
+        "# Heading\n## Subheading\n",
+    )
+    .unwrap();
 
     let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
     cmd.arg("-o").arg("json").arg(temp_dir.path());
@@ -459,7 +475,11 @@ fn test_json_output() {
 #[test]
 fn test_yaml_output() {
     let temp_dir = TempDir::new().unwrap();
-    fs::write(temp_dir.path().join("test.md"), "# Heading\n## Subheading\n").unwrap();
+    fs::write(
+        temp_dir.path().join("test.md"),
+        "# Heading\n## Subheading\n",
+    )
+    .unwrap();
 
     let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
     cmd.arg("-o").arg("yaml").arg(temp_dir.path());
@@ -494,7 +514,11 @@ fn test_text_output_explicit() {
 #[test]
 fn test_tokens_flag_file() {
     let temp_dir = TempDir::new().unwrap();
-    fs::write(temp_dir.path().join("test.md"), "# Heading\nSome content here.\n").unwrap();
+    fs::write(
+        temp_dir.path().join("test.md"),
+        "# Heading\nSome content here.\n",
+    )
+    .unwrap();
 
     let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
     cmd.arg("-t").arg(temp_dir.path());
@@ -531,7 +555,11 @@ fn test_tokens_flag_sections() {
 #[test]
 fn test_tokens_with_verbose() {
     let temp_dir = TempDir::new().unwrap();
-    fs::write(temp_dir.path().join("test.md"), "# Heading\nSome content.\n").unwrap();
+    fs::write(
+        temp_dir.path().join("test.md"),
+        "# Heading\nSome content.\n",
+    )
+    .unwrap();
 
     let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
     cmd.arg("-t").arg("-v").arg(temp_dir.path());
@@ -545,7 +573,11 @@ fn test_tokens_with_verbose() {
 #[test]
 fn test_tokens_json_output() {
     let temp_dir = TempDir::new().unwrap();
-    fs::write(temp_dir.path().join("test.md"), "# Heading\nContent here.\n").unwrap();
+    fs::write(
+        temp_dir.path().join("test.md"),
+        "# Heading\nContent here.\n",
+    )
+    .unwrap();
 
     let mut cmd = Command::new(cargo::cargo_bin!("lsmkd"));
     cmd.arg("-t").arg("-o").arg("json").arg(temp_dir.path());
