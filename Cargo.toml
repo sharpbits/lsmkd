@@ -17,7 +17,9 @@ exclude = [
     "*.nix",
     ".pre-commit*",
     "flake.lock",
-    "Makefile"
+    "Makefile",
+    "AGENTS.md",
+    "ci/*"
 ]
 
 [[bin]]
