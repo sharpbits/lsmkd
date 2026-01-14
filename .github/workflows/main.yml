@@ -31,7 +31,7 @@ jobs:
             target: x86_64-pc-windows-msvc
     name: ${{ matrix.name }}
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Install Rust
       run: bash ci/install-rust.sh ${{ matrix.rust }} ${{ matrix.target }}
     - name: Build and run tests
@@ -42,7 +42,7 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Update Rust
         run: rustup update stable --no-self-update && rustup default stable
       - run: rustup component add rustfmt
@@ -51,7 +51,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Update Rust
         run: rustup update stable --no-self-update && rustup default stable
       - run: rustup component add clippy
@@ -60,7 +60,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Update Rust
       run: rustup update stable --no-self-update && rustup default stable
     - name: Build
