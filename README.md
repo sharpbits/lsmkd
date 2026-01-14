@@ -87,7 +87,7 @@ IT IS CRITICAL THAT YOU FOLLOW THIS COMMAND: LLM context is limited! To conserve
 
 ## Benchmarks
 
-On an M2 Pro Macbook this utiltity indexes the complete github.com docs repo in 1.46s:
+This utility indexes the complete github.com docs repo in 1.46s (M2 Macbook Pro):
 
 ```
 $ git clone https://github.com/github/docs.git --depth=1
