@@ -82,10 +82,12 @@ Binaries can be downloaded from the [release page](https://github.com/sharpbits/
 Add the following to your coding agent instructions:
 
 ```
+## Context Window Management
+
 IT IS CRITICAL THAT YOU FOLLOW THIS COMMAND: LLM context is limited! To conserve context tokens when searching and reading markdown documentation, use the `lsmkd <path(s)>` command instead of `ls` or `find`. This command will list and index all markdown files with heading line numbers. ONLY READ RELEVANT sections of relevant files for the requested task. DO NOT use `find` for markdown (*.md), only use `lsmkd`.
 ```
 
-To have this apply system-wide for all to all projects:
+To have this apply system-wide for all projects:
 - **Claude**: Add the instruction to `~/.claude/CLAUDE.md`
 - **VSCode Copilot**: Run Command `Chat: Configure Instructions...` -> `New Instructions File` -> Select `User Data` -> Name it _lsmkd_ and paste the instruction into the opened editor
 
